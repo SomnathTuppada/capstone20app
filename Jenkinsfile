@@ -3,8 +3,6 @@ pipeline {
 
     environment {
         DOCKER_COMPOSE_FILE = "docker-compose.yml"
-        FRONTEND_IMAGE = "capstone20/frontend"
-        BACKEND_IMAGE = "capstone20/backend"
     }
 
     stages {
@@ -13,34 +11,68 @@ pipeline {
             steps {
                 echo "Pulling latest code..."
                 checkout scm
-            }
-        }
-
-        stage('Build Frontend Image') {
-            steps {
-                echo "Building frontend Docker image..."
-                sh """
-                    docker build -t ${FRONTEND_IMAGE}:latest ./frontend
-                """
+                bat "git log -1"
             }
         }
 
         stage('Build Backend Image') {
             steps {
-                echo "Building backend Docker image..."
-                sh """
-                    docker build -t ${BACKEND_IMAGE}:latest ./backend
-                """
+                script {
+                    echo "Building backend Docker image..."
+                    bat """
+                        cd backend
+                        docker build -t capstone_backend:latest .
+                    """
+                }
             }
         }
 
-        stage('Docker Compose Up') {
+        stage('Build Frontend Image') {
             steps {
-                echo "Running docker compose..."
-                sh """
-                    docker compose down || true
-                    docker compose up -d --build
-                """
+                script {
+                    echo "Building frontend Docker image..."
+                    bat """
+                        cd frontend
+                        docker build -t capstone_frontend:latest .
+                    """
+                }
+            }
+        }
+
+        stage('Pre-Deploy Cleanup') {
+            steps {
+                script {
+                    echo "Cleaning up old containers..."
+                    bat "docker-compose -f %DOCKER_COMPOSE_FILE% down -v"
+                }
+            }
+        }
+
+        stage('Deploy Containers') {
+            steps {
+                script {
+                    echo "Starting new containers..."
+                    bat "docker-compose -f %DOCKER_COMPOSE_FILE% up -d --build --force-recreate"
+                }
+            }
+        }
+
+        stage('Integration Tests') {
+            steps {
+                script {
+                    echo "Running backend tests (if any)..."
+                    def status = bat(script: """
+                        docker-compose -f %DOCKER_COMPOSE_FILE% exec backend pytest
+                    """, returnStatus: true)
+
+                    if (status == 5) {
+                        echo "No tests were collected. Skipping tests."
+                    } else if (status != 0) {
+                        error "Integration tests failed."
+                    } else {
+                        echo "Integration tests passed!"
+                    }
+                }
             }
         }
     }
@@ -48,9 +80,10 @@ pipeline {
     post {
         success {
             echo "Deployment completed successfully!"
+            echo "Your backend + frontend microservice is now running."
         }
         failure {
-            echo "Build failed. Check the logs!"
+            echo "Build failed. Check the logs."
         }
     }
 }
