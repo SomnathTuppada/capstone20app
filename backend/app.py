@@ -1,27 +1,34 @@
+# Backend (auth gateway) - app.py
 from dotenv import load_dotenv
+load_dotenv()
+
 import os
-
-load_dotenv()   # Loads .env automatically
-
-CLIENT_ID = os.getenv("CLIENT_ID")
-CLIENT_SECRET = os.getenv("CLIENT_SECRET")
-
-
 from flask import Flask, redirect, request, jsonify, session, send_file
 from flask_cors import CORS
 import requests
 import tempfile
-import os
 import io
-from config import CLIENT_ID, CLIENT_SECRET, SECRET_KEY
+import traceback
+
+CLIENT_ID = os.getenv("CLIENT_ID")
+CLIENT_SECRET = os.getenv("CLIENT_SECRET")
+SECRET_KEY = os.getenv("SECRET_KEY")
 
 app = Flask(__name__)
-CORS(app, supports_credentials=True)
-
 app.secret_key = SECRET_KEY
 
-MICROSERVICE_URL = "http://microservice:5000/predict-file"
+# ----------------------------
+# IMPORTANT: change this if your microservice is reachable at a different host
+# If microservice runs locally use 127.0.0.1:5000; if you run in docker-compose use the service name.
+MICROSERVICE_URL = "http://127.0.0.1:5000/predict-file"
+# ----------------------------
 
+# Allow only the frontend origin (required when using credentials)
+FRONTEND_ORIGIN = "http://localhost:5174"  # change if your frontend runs on different port
+
+CORS(app, supports_credentials=True, resources={r"/*": {"origins": [FRONTEND_ORIGIN]}})
+
+# Google endpoints
 GOOGLE_DISCOVERY_URL = "https://accounts.google.com/.well-known/openid-configuration"
 GOOGLE_CONFIG = requests.get(GOOGLE_DISCOVERY_URL).json()
 AUTH_URL = GOOGLE_CONFIG["authorization_endpoint"]
@@ -30,10 +37,9 @@ USERINFO_URL = GOOGLE_CONFIG["userinfo_endpoint"]
 
 REDIRECT_URI = "http://localhost:5001/auth/callback"
 
-
-# -------------------------------------------
-# GOOGLE LOGIN (REDIRECT)
-# -------------------------------------------
+# ----------------------------
+# Authentication endpoints
+# ----------------------------
 @app.route("/auth/login")
 def login():
     google_auth_url = (
@@ -46,9 +52,6 @@ def login():
     return redirect(google_auth_url)
 
 
-# -------------------------------------------
-# GOOGLE CALLBACK
-# -------------------------------------------
 @app.route("/auth/callback")
 def callback():
     if "code" not in request.args:
@@ -72,7 +75,6 @@ def callback():
 
     session["access_token"] = token_json["access_token"]
 
-    # Fetch user info
     headers = {"Authorization": f"Bearer {session['access_token']}"}
     user_info = requests.get(USERINFO_URL, headers=headers).json()
 
@@ -82,13 +84,9 @@ def callback():
         "picture": user_info.get("picture"),
     }
 
-    # Redirect back to React frontend
-    return redirect("http://localhost:5174")
+    return redirect("http://localhost:5174")  # frontend address
 
 
-# -------------------------------------------
-# USERINFO ENDPOINT
-# -------------------------------------------
 @app.route("/auth/userinfo")
 def userinfo():
     if "user" not in session:
@@ -96,18 +94,15 @@ def userinfo():
     return jsonify(session["user"])
 
 
-# -------------------------------------------
-# LOGOUT
-# -------------------------------------------
 @app.route("/auth/logout")
 def logout():
     session.clear()
     return jsonify({"status": "logged out"})
 
 
-# -------------------------------------------
-# PROTECTED FILE UPLOAD (requires login)
-# -------------------------------------------
+# ----------------------------
+# Protected upload that forwards to microservice
+# ----------------------------
 @app.route("/api/upload", methods=["POST"])
 def upload_file():
     if "user" not in session:
@@ -119,15 +114,30 @@ def upload_file():
 
         file = request.files["file"]
 
-        files = {"file": (file.filename, file.stream, file.mimetype)}
-        micro_res = requests.post(MICROSERVICE_URL, files=files)
+        # Rewind stream to start (defensive)
+        try:
+            file.stream.seek(0)
+        except Exception:
+            pass
+
+        # Use file.read() to get bytes (safer) or forward file.stream directly
+        file_bytes = file.read()
+        files = {"file": (file.filename, file_bytes, file.mimetype)}
+
+        # call microservice with timeout and proper error handling
+        try:
+            micro_res = requests.post(MICROSERVICE_URL, files=files, timeout=30)
+        except requests.RequestException as e:
+            # return the actual error to frontend for debugging (connection refused, DNS error etc.)
+            return jsonify({"error": "Microservice connection failed", "details": str(e)}), 502
 
         if micro_res.status_code != 200:
-            return jsonify({"error": "Microservice error", "details": micro_res.text}), 500
+            # forward microservice error body & status code
+            return (micro_res.content, micro_res.status_code, {"Content-Type": micro_res.headers.get("Content-Type", "text/plain")})
 
+        # Save to temp file and send as attachment
         temp_dir = tempfile.mkdtemp()
         output_path = os.path.join(temp_dir, "prediction_output.csv")
-
         with open(output_path, "wb") as f:
             f.write(micro_res.content)
 
@@ -139,8 +149,10 @@ def upload_file():
         )
 
     except Exception as e:
-        return jsonify({"error": "Server error", "details": str(e)}), 500
+        tb = traceback.format_exc()
+        return jsonify({"error": "Server error", "details": str(e), "traceback": tb}), 500
 
 
 if __name__ == "__main__":
-    app.run(port=5001, debug=True)
+    # Bind to 127.0.0.1:5001 as you had before
+    app.run(host="127.0.0.1", port=5001, debug=True)

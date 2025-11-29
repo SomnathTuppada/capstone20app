@@ -35,3 +35,15 @@ Thumbs.db
 # EDITOR FILES
 # ===========================
 .vscode/
+node_modules
+frontend/node_modules
+backend/__pycache__
+*.pyc
+*.pyo
+*.pyd
+.env
+.vscode
+dist
+.git
+.gitignore
+*.log

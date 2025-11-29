@@ -1,18 +1,41 @@
-version: "3.9"
-
 services:
   backend:
     build:
-      context: ./backend
-    container_name: capstone_backend
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: loan-backend
+    restart: unless-stopped
     ports:
       - "5000:5000"
-    env_file:
-      - ./backend/.env
+    environment:
+      - PYTHONUNBUFFERED=1
+      - FLASK_ENV=production
+    # If you want to edit backend code locally and reflect in container during dev,
+    # uncomment the next volume mapping (not recommended for production)
+    # volumes:
+    #   - ./backend:/app:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/ || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
 
   frontend:
     build:
-      context: ./frontend
-    container_name: capstone_frontend
+      context: .
+      dockerfile: frontend/Dockerfile
+    container_name: loan-frontend
+    restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "3000:80"   # host:container (host 3000 => nginx 80)
+    depends_on:
+      - backend
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "--quiet", "http://localhost:80/ || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+networks:
+  default:
+    name: capstone_network

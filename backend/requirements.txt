@@ -2,3 +2,11 @@ flask
 flask-cors
 requests
 python-dotenv
+gunicorn==20.1.0
+pandas
+numpy
+scikit-learn
+joblib
+openpyxl
+xlsxwriter
+google-auth

@@ -1,19 +1,26 @@
-# Step 1: Build React App
-FROM node:18 AS builder
-
+# frontend/Dockerfile
+# 1) Build stage
+FROM node:18-alpine AS builder
 WORKDIR /app
 
-COPY package*.json ./
-RUN npm install
+# copy package files and install deps
+COPY frontend/package*.json ./ 
+RUN npm ci
 
-COPY . .
+# copy source and build
+COPY frontend/ ./
 RUN npm run build
 
-# Step 2: Serve using Nginx
-FROM nginx:alpine
+# 2) Production stage: nginx
+FROM nginx:stable-alpine
+# remove default static files
+RUN rm -rf /usr/share/nginx/html/*
 
+# copy built static site
 COPY --from=builder /app/dist /usr/share/nginx/html
 
-EXPOSE 80
+# Add a small nginx config to handle SPA route fallback (optional)
+COPY frontend/nginx.conf /etc/nginx/conf.d/default.conf
 
+EXPOSE 80
 CMD ["nginx", "-g", "daemon off;"]
