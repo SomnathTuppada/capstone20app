@@ -9,7 +9,7 @@ pipeline {
 
         stage('Checkout Code') {
             steps {
-                echo "Pulling latest code..."
+                echo "Pulling latest code from GitHub..."
                 checkout scm
                 bat "git log -1"
             }
@@ -42,8 +42,8 @@ pipeline {
         stage('Pre-Deploy Cleanup') {
             steps {
                 script {
-                    echo "Cleaning up old containers..."
-                    bat "docker-compose -f %DOCKER_COMPOSE_FILE% down -v"
+                    echo "Stopping and removing old containers..."
+                    bat "docker-compose -f %DOCKER_COMPOSE_FILE% down -v || exit 0"
                 }
             }
         }
@@ -51,7 +51,7 @@ pipeline {
         stage('Deploy Containers') {
             steps {
                 script {
-                    echo "Starting new containers..."
+                    echo "Deploying backend + frontend using Docker Compose..."
                     bat "docker-compose -f %DOCKER_COMPOSE_FILE% up -d --build --force-recreate"
                 }
             }
@@ -61,14 +61,16 @@ pipeline {
             steps {
                 script {
                     echo "Running backend tests (if any)..."
-                    def status = bat(script: """
-                        docker-compose -f %DOCKER_COMPOSE_FILE% exec backend pytest
-                    """, returnStatus: true)
+
+                    def status = bat(
+                        script: "docker-compose -f %DOCKER_COMPOSE_FILE% exec backend pytest",
+                        returnStatus: true
+                    )
 
                     if (status == 5) {
-                        echo "No tests were collected. Skipping tests."
+                        echo "No tests were collected. Skipping..."
                     } else if (status != 0) {
-                        error "Integration tests failed."
+                        error "Tests failed! Exit code: ${status}"
                     } else {
                         echo "Integration tests passed!"
                     }
@@ -80,10 +82,10 @@ pipeline {
     post {
         success {
             echo "Deployment completed successfully!"
-            echo "Your backend + frontend microservice is now running."
+            echo "Backend + Frontend microservice is now running."
         }
         failure {
-            echo "Build failed. Check the logs."
+            echo "Build failed. Check logs."
         }
     }
 }
