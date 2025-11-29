@@ -1,0 +1,37 @@
+# ===========================
+# BACKEND IGNORE
+# ===========================
+backend/.env
+backend/config.py
+backend/__pycache__/
+backend/*.pyc
+backend/*.pkl
+
+# ===========================
+# FRONTEND IGNORE
+# ===========================
+frontend/node_modules/
+frontend/dist/
+frontend/.env
+
+# ===========================
+# PYTHON IGNORE
+# ===========================
+__pycache__/
+*.pyc
+
+# ===========================
+# LOG FILES
+# ===========================
+*.log
+
+# ===========================
+# SYSTEM FILES
+# ===========================
+.DS_Store
+Thumbs.db
+
+# ===========================
+# EDITOR FILES
+# ===========================
+.vscode/

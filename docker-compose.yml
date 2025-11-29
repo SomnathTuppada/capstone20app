@@ -1,0 +1,35 @@
+services:
+
+  microservice:
+    build: ../capstone2.0_app/Backend
+    container_name: microservice
+    ports:
+      - "5000:5000"
+    networks:
+      - capstone_net
+
+  backend:
+    build: ./backend
+    container_name: backend
+    ports:
+      - "5001:5001"
+    depends_on:
+      - microservice
+    environment:
+      - FLASK_ENV=production
+    networks:
+      - capstone_net
+
+  frontend:
+    build: ./frontend
+    container_name: frontend
+    ports:
+      - "5174:80"
+    depends_on:
+      - backend
+    networks:
+      - capstone_net
+
+networks:
+  capstone_net:
+    driver: bridge
